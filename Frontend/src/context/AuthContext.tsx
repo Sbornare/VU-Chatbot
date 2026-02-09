@@ -4,6 +4,9 @@ interface User {
   id: string;
   email: string;
   name: string;
+  phone_number?: string;
+  interested_programs?: string;
+  whatsapp_notifications_enabled?: boolean;
   role: 'student' | 'admin';
 }
 
@@ -12,7 +15,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<boolean>;
-  register: (name: string, email: string, password: string) => Promise<boolean>;
+  register: (name: string, email: string, password: string, phone: string, whatsapp_notifications: boolean, interested_programs?: string) => Promise<boolean>;
   logout: () => void;
 }
 
@@ -31,55 +34,48 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 800));
-    
-    // Mock users
-    const mockUsers = [
-      { id: '1', email: 'admin@college.edu', password: 'admin123', name: 'Admin User', role: 'admin' as const },
-      { id: '2', email: 'student@college.edu', password: 'student123', name: 'John Student', role: 'student' as const },
-    ];
-
-    const foundUser = mockUsers.find(u => u.email === email && u.password === password);
-    
-    if (foundUser) {
-      const { password: _, ...userWithoutPassword } = foundUser;
-      setUser(userWithoutPassword);
-      localStorage.setItem('college_agent_user', JSON.stringify(userWithoutPassword));
+    // Accept any email/password - works offline without backend
+    if (email && password) {
+      const newUser: User = {
+        id: Date.now().toString(),
+        email,
+        name: email.split('@')[0],
+        phone_number: '',
+        role: email.includes('admin') ? 'admin' : 'student',
+      };
+      setUser(newUser);
+      localStorage.setItem('college_agent_user', JSON.stringify(newUser));
       return true;
     }
 
-    // Allow any email/password for demo purposes
-    const newUser: User = {
-      id: Date.now().toString(),
-      email,
-      name: email.split('@')[0],
-      role: email.includes('admin') ? 'admin' : 'student',
-    };
-    setUser(newUser);
-    localStorage.setItem('college_agent_user', JSON.stringify(newUser));
-    return true;
+    return false;
   };
 
-  const register = async (name: string, email: string, password: string): Promise<boolean> => {
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 800));
+  const register = async (name: string, email: string, password: string, phone: string, whatsapp_notifications: boolean, interested_programs?: string): Promise<boolean> => {
+    // Accept any registration - works offline without backend
+    if (name && email && password) {
+      const newUser: User = {
+        id: Date.now().toString(),
+        email,
+        name,
+        phone_number: phone,
+        interested_programs,
+        whatsapp_notifications_enabled: whatsapp_notifications,
+        role: email.includes('admin') ? 'admin' : 'student',
+      };
+      
+      setUser(newUser);
+      localStorage.setItem('college_agent_user', JSON.stringify(newUser));
+      return true;
+    }
     
-    const newUser: User = {
-      id: Date.now().toString(),
-      email,
-      name,
-      role: email.includes('admin') ? 'admin' : 'student',
-    };
-    
-    setUser(newUser);
-    localStorage.setItem('college_agent_user', JSON.stringify(newUser));
-    return true;
+    return false;
   };
 
   const logout = () => {
     setUser(null);
     localStorage.removeItem('college_agent_user');
+    localStorage.removeItem('access_token');
   };
 
   return (

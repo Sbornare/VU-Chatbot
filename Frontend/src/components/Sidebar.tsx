@@ -1,30 +1,41 @@
-import { Plus, Trash2, Edit2, MessageSquare, ChevronLeft } from 'lucide-react';
+import { Plus, Trash2, Edit2, MessageSquare, ChevronLeft, LogOut, User, Moon, Sun } from 'lucide-react';
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ChatSession } from '../hooks/useChatSessions';
+import { useAuth } from '../hooks/useAuth';
 
 interface SidebarProps {
   sessions: ChatSession[];
-  activeSessionId: string | null;
+  activeSession: ChatSession | null;
   onNewChat: () => void;
-  onSelectSession: (id: string) => void;
+  onSwitchSession: (id: string) => void;
   onDeleteSession: (id: string) => void;
   onRenameSession: (id: string, newTitle: string) => void;
-  isOpen: boolean;
-  onToggle: () => void;
+  isDarkMode?: boolean;
+  onToggleDarkMode?: () => void;
 }
 
 export default function Sidebar({
   sessions,
-  activeSessionId,
+  activeSession,
   onNewChat,
-  onSelectSession,
+  onSwitchSession,
   onDeleteSession,
   onRenameSession,
-  isOpen,
-  onToggle
+  isDarkMode = false,
+  onToggleDarkMode
 }: SidebarProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTitle, setEditTitle] = useState('');
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
+
+  const handleLogout = () => {
+    if (confirm('Are you sure you want to logout?')) {
+      logout();
+      navigate('/auth');
+    }
+  };
 
   const startEditing = (session: ChatSession) => {
     setEditingId(session.id);
@@ -40,34 +51,25 @@ export default function Sidebar({
 
   return (
     <>
-      {/* Mobile Overlay */}
-      {isOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={onToggle}
-        />
-      )}
-
       {/* Sidebar */}
-      <div
-        className={`fixed lg:relative top-0 left-0 h-full bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 z-50 transition-transform duration-300 flex flex-col ${
-          isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-        } w-64`}
-      >
+      <div className="h-full bg-gray-50 dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex flex-col w-full">
         {/* Header */}
         <div className="p-4 border-b border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white">Chats</h2>
-            <button
-              onClick={onToggle}
-              className="lg:hidden p-1 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-md"
-            >
-              <ChevronLeft className="w-5 h-5" />
-            </button>
+            {onToggleDarkMode && (
+              <button
+                onClick={onToggleDarkMode}
+                className="p-2 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-md transition-colors"
+                title={isDarkMode ? "Light mode" : "Dark mode"}
+              >
+                {isDarkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              </button>
+            )}
           </div>
           <button
             onClick={onNewChat}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-orange-500 to-blue-600 text-white rounded-lg hover:from-orange-600 hover:to-blue-700 transition-all shadow-sm"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-lg hover:from-blue-700 hover:to-purple-700 transition-all shadow-sm"
           >
             <Plus className="w-4 h-4" />
             New Chat
@@ -87,8 +89,8 @@ export default function Sidebar({
                 <div
                   key={session.id}
                   className={`group relative rounded-lg transition-colors ${
-                    session.id === activeSessionId
-                      ? 'bg-gradient-to-r from-orange-100 to-blue-100 dark:from-orange-900/20 dark:to-blue-900/20'
+                    session.id === activeSession?.id
+                      ? 'bg-gradient-to-r from-blue-100 to-purple-100 dark:from-blue-900/20 dark:to-purple-900/20'
                       : 'hover:bg-gray-200 dark:hover:bg-gray-800'
                   }`}
                 >
@@ -103,13 +105,13 @@ export default function Sidebar({
                           if (e.key === 'Enter') saveEdit(session.id);
                           if (e.key === 'Escape') setEditingId(null);
                         }}
-                        className="w-full px-2 py-1 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-orange-500"
+                        className="w-full px-2 py-1 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                         autoFocus
                       />
                     </div>
                   ) : (
                     <button
-                      onClick={() => onSelectSession(session.id)}
+                      onClick={() => onSwitchSession(session.id)}
                       className="w-full text-left p-3 flex items-start gap-2"
                     >
                       <MessageSquare className="w-4 h-4 mt-0.5 shrink-0 text-gray-600 dark:text-gray-400" />
@@ -157,10 +159,34 @@ export default function Sidebar({
           )}
         </div>
 
-        {/* Footer */}
-        <div className="p-4 border-t border-gray-200 dark:border-gray-700">
+        {/* Footer - User Profile & Logout */}
+        <div className="p-4 border-t border-gray-200 dark:border-gray-700 space-y-3">
+          {user && (
+            <div className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-900/20 dark:to-purple-900/20 rounded-lg p-3 border border-blue-200 dark:border-blue-800">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center flex-shrink-0 shadow-md">
+                  <User className="w-5 h-5 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-900 dark:text-white truncate">
+                    {user.name}
+                  </p>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 truncate">
+                    {user.email}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handleLogout}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600 dark:text-red-400 rounded-md transition-colors text-sm font-medium border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md"
+              >
+                <LogOut className="w-4 h-4" />
+                Logout
+              </button>
+            </div>
+          )}
           <p className="text-xs text-gray-500 dark:text-gray-400 text-center">
-            Chats saved locally on your device
+            Chats saved locally
           </p>
         </div>
       </div>

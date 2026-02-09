@@ -1,99 +1,92 @@
 from backend.rag.retriever import retrieve_context
 from backend.granite.granite_client import granite_embeddings
-from functools import lru_cache
 import asyncio
 
 
-@lru_cache(maxsize=128)
-def _cached_answer_question(question: str) -> str:
+def _generate_answer_question(question: str, conversation_history: str = None) -> dict:
     """
-    Cached version - returns cached result for identical questions.
-    LRU cache stores up to 128 most recent questions.
+    Enhanced answer generation with better context retrieval and response quality
     """
-    result = retrieve_context(question)
-    context = result.get("context", "") if isinstance(result, dict) else result
+    # Get enhanced context with sources
+    result = retrieve_context(question, k=8)  # Get more context for better answers
+    
+    if isinstance(result, dict):
+        context = result.get("context", "")
+        sources = result.get("sources", [])
+    else:
+        context = result
+        sources = []
 
     if not context.strip():
-        return "I don't have enough information to answer that."
+        return {
+            "response": "I don't have specific information about that in my knowledge base. Could you ask about:\n\n• **Academic Programs** - BTech, MTech, MBA, etc.\n• **Admissions** - Requirements, deadlines, procedures\n• **Fees & Scholarships** - Cost details and financial aid\n• **Campus Life** - Facilities, hostels, activities\n• **Placements** - Job statistics and companies\n\nI'm here to help with all aspects of Vishwakarma University!",
+            "sources": []
+        }
 
-    prompt = f"""You are a helpful and professional admission assistant for Vishwakarma University.
-Your task is to answer the user's question based ONLY on the provided context.
-Answer directly and concisely. Do not make up new questions or answers.
-If the answer is not in the context, politely state that you don't have that information.
+    # Build enhanced prompt with conversation context
+    from backend.granite.prompts import build_enhanced_prompt
+    prompt = build_enhanced_prompt(context, question, conversation_history)
 
----
-Context:
-{context}
----
-
-User Question: {question}
-
-Assistant Answer:"""
-
-    return granite_embeddings.generate_chat_response(prompt)
-
-
-def answer_question(question: str) -> str:
-    """Main entry point with caching enabled - blocking version"""
-    return _cached_answer_question(question)
-
-
-async def stream_answer_question(question: str):
-    """
-    Async streaming version - responds like ChatGPT
-    Yields response tokens as they arrive
+    # Generate response with improved model parameters
+    response = granite_embeddings.generate_chat_response(
+        prompt, 
+        max_tokens=1500, 
+        temperature=0.7  # Balanced creativity and accuracy
+    )
     
-    This is much faster perceived latency because:
-    1. User sees text appearing immediately
-    2. No waiting for full response
-    3. Can read as it generates
-    """
-    # Check if cached first (instant response for known questions)
-    try:
-        cached = _cached_answer_question(question)
-        # If cached, yield it in chunks for streaming effect
-        for i in range(0, len(cached), 15):
-            chunk = cached[i:i+15]
-            yield chunk
-            await asyncio.sleep(0.01)  # Small delay for smooth streaming
-        return
-    except:
-        pass
+    # Post-process response for better quality
+    if response:
+        # Clean up response formatting
+        response = response.strip()
+        
+        # Ensure response ends properly
+        if response and not response.endswith(('.', '!', '?', ':')):
+            if len(response) > 50:  # Only add period to longer responses
+                response += '.'
+    else:
+        response = "I apologize, but I'm having difficulty generating a response right now. Please try rephrasing your question or contact the admissions office directly."
     
-    # Not cached - stream from API
-    result = retrieve_context(question)
-    context = result.get("context", "") if isinstance(result, dict) else result
+    return {
+        "response": response,
+        "sources": sources[:5]  # Limit to top 5 sources
+    }
+
+
+def answer_question(question: str, conversation_history: str = None) -> dict:
+    """Enhanced main entry point that returns response with sources"""
+    return _generate_answer_question(question, conversation_history)
+
+
+async def stream_answer_question(question: str, conversation_history: str = None):
+    """
+    Enhanced async streaming with better context and sources
+    """
+    result = retrieve_context(question, k=8)
+    
+    if isinstance(result, dict):
+        context = result.get("context", "")
+        sources = result.get("sources", [])
+    else:
+        context = result
+        sources = []
 
     if not context.strip():
-        response = "I don't have enough information to answer that."
+        response = "I don't have specific information about that in my knowledge base. Let me suggest some areas I can help with:\n\n• **Academic Programs** - Engineering, Management, Sciences\n• **Admissions** - Requirements, deadlines, application process\n• **Campus Life** - Facilities, hostels, student activities\n• **Placements** - Career opportunities and statistics\n\nWhat would you like to know about?"
+        
         for chunk in response.split():
-            yield chunk + " "
-            await asyncio.sleep(0.01)
+            yield {"chunk": chunk + " ", "sources": []}
+            await asyncio.sleep(0.02)
         return
 
-    prompt = f"""You are a helpful and professional admission assistant for Vishwakarma University.
-Your task is to answer the user's question based ONLY on the provided context.
-Answer directly and concisely. Do not make up new questions or answers.
-If the answer is not in the context, politely state that you don't have that information.
+    from backend.granite.prompts import build_enhanced_prompt
+    prompt = build_enhanced_prompt(context, question, conversation_history)
 
----
-Context:
-{context}
----
-
-User Question: {question}
-
-Assistant Answer:"""
-
-    # Stream from Granite API
-    full_response = ""
+    # Stream enhanced response with sources
+    first_chunk = True
     for token in granite_embeddings.generate_chat_stream(prompt):
-        full_response += token
-        yield token
-        await asyncio.sleep(0.001)  # Minimal delay, stream as fast as possible
-    
-    # Cache the full response for next time
-    try:
-        _cached_answer_question.cache_clear()  # Invalidate cache before setting
-    except:
-        pass
+        chunk_data = {"chunk": token}
+        if first_chunk:
+            chunk_data["sources"] = sources[:5]  # Include sources with first chunk
+            first_chunk = False
+        yield chunk_data
+        await asyncio.sleep(0.001)

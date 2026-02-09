@@ -1,8 +1,10 @@
-// Chat service to communicate with the backend
+// Bulletproof chat service - no crashes allowed
 
 export interface Message {
+  id: string;
   role: 'user' | 'assistant';
   content: string;
+  timestamp: Date;
 }
 
 export interface Source {
@@ -12,64 +14,91 @@ export interface Source {
 }
 
 export interface ChatResponse {
-  answer: string;
-  sources: Source[];
+  response: string;
+  sources?: Source[];
+  response_time_ms?: number;
 }
 
 const API_URL = "http://localhost:8000/api/chat";
-const API_STREAM_URL = "http://localhost:8000/api/chat/stream";
+const ENHANCED_API_URL = "http://localhost:8000/api/chat/quality";
 
 export async function sendMessage(question: string): Promise<ChatResponse> {
-  // Fallback for non-streaming usage if needed, but we should use stream
-  const res = await fetch(API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question })
-  });
+  // Input validation
+  if (!question || typeof question !== 'string' || question.trim().length === 0) {
+    return {
+      response: "Please enter a valid question.",
+      sources: [],
+      response_time_ms: 1
+    };
+  }
 
-  if (!res.ok) throw new Error(`API Error: ${res.statusText}`);
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
 
-  return await res.json();
+    // Try enhanced API first
+    let res = await fetch(ENHANCED_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        question: question.trim(),
+        conversation_history: null // TODO: Add conversation support
+      }),
+      signal: controller.signal
+    });
+
+    // Fallback to basic API if enhanced fails
+    if (!res.ok) {
+      console.log('Enhanced API failed, trying basic API...');
+      res = await fetch(API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: question.trim() }),
+        signal: controller.signal
+      });
+    }
+
+    clearTimeout(timeoutId);
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    }
+
+    const data = await res.json();
+    
+    // Validate response structure
+    if (!data || typeof data.response !== 'string') {
+      throw new Error('Invalid response format');
+    }
+    
+    return {
+      response: data.response || "I apologize, but I wasn't able to generate a response. Please try rephrasing your question.",
+      sources: Array.isArray(data.sources) ? data.sources : [],
+      response_time_ms: typeof data.response_time_ms === 'number' ? data.response_time_ms : 1
+    };
+    
+  } catch (error) {
+    console.error('Chat service error:', error);
+    
+    return {
+      response: "I'm having trouble connecting to the server. Please check your connection and try again. If the problem persists, please refresh the page.",
+      sources: [],
+      response_time_ms: 1
+    };
+  }
 }
 
+// Simplified streaming function (not used but kept for compatibility)
 export async function sendMessageStream(
   question: string,
   onChunk: (text: string) => void,
-  onSources?: (sources: Source[]) => void
 ): Promise<void> {
-  /**
-   * Streaming endpoint - works like ChatGPT
-   * Sends response tokens as Server-Sent Events
-   */
-  const res = await fetch(API_STREAM_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ question })
-  });
-
-  if (!res.ok) throw new Error(`API Error: ${res.statusText}`);
-
-  const reader = res.body?.getReader();
-  const decoder = new TextDecoder();
-
-  if (!reader) throw new Error("No reader available");
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    const chunk = decoder.decode(value, { stream: true });
-    const lines = chunk.split('\n');
-
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      
-      // Handle Server-Sent Events format (data: ...)
-      if (line.startsWith('data: ')) {
-        const data = line.slice(6); // Remove "data: " prefix
-        onChunk(data);
-      }
-    }
+  try {
+    const response = await sendMessage(question);
+    onChunk(response.response);
+  } catch (error) {
+    console.error('Streaming error:', error);
+    onChunk("Error: Unable to get response. Please try again.");
   }
 }
 

@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Eye, EyeOff, Loader2, Mail, Lock, User, ArrowRight } from 'lucide-react';
+import { Eye, EyeOff, Loader2, Mail, Lock, User, Phone, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface AuthFormProps {
   mode: 'login' | 'register';
-  onSubmit: (data: { name?: string; email: string; password: string }) => Promise<void>;
+  onSubmit: (data: { name?: string; email: string; password: string; phone?: string; interested_programs?: string }) => Promise<void>;
   error?: string;
 }
 
@@ -14,6 +14,8 @@ const AuthForm: React.FC<AuthFormProps> = ({ mode, onSubmit, error }) => {
     name: '',
     email: '',
     password: '',
+    phone: '',
+    interested_programs: '',
   });
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -34,23 +36,57 @@ const AuthForm: React.FC<AuthFormProps> = ({ mode, onSubmit, error }) => {
     <div className="w-full max-w-md">
       <form onSubmit={handleSubmit} className="space-y-5">
         {!isLogin && (
-          <div className="space-y-2">
-            <label htmlFor="name" className="text-sm font-medium text-foreground">
-              Full Name
-            </label>
-            <div className="relative">
-              <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+          <>
+            <div className="space-y-2">
+              <label htmlFor="name" className="text-sm font-medium text-foreground">
+                Full Name
+              </label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                <input
+                  id="name"
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  className="input-field pl-11"
+                  placeholder="Enter your full name"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="phone" className="text-sm font-medium text-foreground">
+                Phone Number (for admission alerts)
+              </label>
+              <div className="relative">
+                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
+                <input
+                  id="phone"
+                  type="tel"
+                  value={formData.phone}
+                  onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
+                  className="input-field pl-11"
+                  placeholder="+1 (555) 123-4567"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label htmlFor="programs" className="text-sm font-medium text-foreground">
+                Interested Programs (optional)
+              </label>
               <input
-                id="name"
+                id="programs"
                 type="text"
-                value={formData.name}
-                onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
-                className="input-field pl-11"
-                placeholder="Enter your full name"
-                required
+                value={formData.interested_programs}
+                onChange={(e) => setFormData(prev => ({ ...prev, interested_programs: e.target.value }))}
+                className="input-field"
+                placeholder="e.g., BTech CSE, MBA"
               />
             </div>
-          </div>
+          </>
         )}
 
         <div className="space-y-2">

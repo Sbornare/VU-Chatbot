@@ -21,9 +21,15 @@ class Settings(BaseSettings):
     GRANITE_EMBEDDING_MODEL: str
     GRANITE_CHAT_MODEL: str
 
+    # Twilio WhatsApp
+    TWILIO_ACCOUNT_SID: str = Field(default="", env="TWILIO_ACCOUNT_SID")
+    TWILIO_AUTH_TOKEN: str = Field(default="", env="TWILIO_AUTH_TOKEN")
+    TWILIO_WHATSAPP_NUMBER: str = Field(default="", env="TWILIO_WHATSAPP_NUMBER")
+
     class Config:
         env_file = ".env"
         extra = "ignore"
 
 
 settings = Settings()
+

@@ -19,10 +19,13 @@ def get_current_user(
             settings.JWT_SECRET,
             algorithms=[settings.JWT_ALGORITHM]
         )
-        user_id: int = payload.get("sub")
-        if user_id is None:
+        user_id_str: str = payload.get("sub")
+        if user_id_str is None:
             raise HTTPException(status_code=401)
-    except JWTError:
+        
+        # Convert to int for database lookup
+        user_id = int(user_id_str)
+    except (JWTError, ValueError, TypeError):
         raise HTTPException(status_code=401)
 
     user = db.query(User).filter(User.id == user_id).first()

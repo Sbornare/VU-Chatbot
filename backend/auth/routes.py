@@ -10,7 +10,10 @@ from backend.auth.auth_utils import (
     create_access_token
 )
 from backend.auth.dependencies import get_current_user
+from backend.services.whatsapp_service import whatsapp_service
+import logging
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -18,15 +21,34 @@ router = APIRouter()
 def register(user: UserCreate, db: Session = Depends(get_db)):
     if db.query(User).filter(User.email == user.email).first():
         raise HTTPException(400, "Email already registered")
+    
+    if db.query(User).filter(User.phone_number == user.phone_number).first():
+        raise HTTPException(400, "Phone number already registered")
 
     new_user = User(
         username=user.username,
         email=user.email,
-        hashed_password=hash_password(user.password)
+        phone_number=user.phone_number,
+        interested_programs=user.interested_programs,
+        hashed_password=hash_password(user.password),
+        whatsapp_notifications_enabled=user.whatsapp_notifications_enabled
     )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+    
+    # Send WhatsApp welcome message only if enabled
+    try:
+        if user.phone_number and user.whatsapp_notifications_enabled:
+            success = whatsapp_service.send_welcome_message(
+                user.phone_number,
+                user.username
+            )
+            if success:
+                logger.info(f"WhatsApp welcome message sent to {user.phone_number}")
+    except Exception as e:
+        logger.error(f"Failed to send welcome message: {e}")
+    
     return new_user
 
 
@@ -41,8 +63,13 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
     db_user.last_login = datetime.utcnow()
     db.commit()
 
-    token = create_access_token({"sub": db_user.id})
+    token = create_access_token({"sub": str(db_user.id)})
     return {"access_token": token, "token_type": "bearer"}
+
+
+@router.get("/me", response_model=UserOut)
+def get_current_user_info(current_user: User = Depends(get_current_user)):
+    return current_user
 
 
 @router.get("/users", response_model=list[UserOut])

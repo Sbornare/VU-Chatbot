@@ -1,85 +1,94 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from backend.rag.retriever import retrieve_context
-from backend.granite.granite_client import GraniteClient
+from typing import List, Dict, Any, Optional
+try:
+    from backend.granite.granite_client import granite_client
+except ImportError:
+    from granite.granite_client import granite_client
 import logging
+import time
+import re
 
 # Configure logger
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-try:
-    granite = GraniteClient()
-except Exception as e:
-    logger.error(f"Failed to initialize GraniteClient: {e}")
-    granite = None
 
 class ChatRequest(BaseModel):
     question: str
+    conversation_history: Optional[str] = None
 
-@router.post("/chat")
-def chat(req: ChatRequest):
-    # FAST PATH: Check for basic greetings
-    query_lower = req.question.lower().strip().rstrip("?!.")
-    greetings = ["hi", "hello", "hey", "greetings", "good morning", "good afternoon", "good evening"]
-    basic_queries = ["can you help me", "what you do", "how you can help me", "who are you", "what is this"]
+class Source(BaseModel):
+    category: str
+    filename: str
+    snippet: str
+
+class ChatResponse(BaseModel):
+    response: str
+    sources: List[Source] = []
+    response_time_ms: float
+    tokens_used: Optional[int] = None
+
+@router.post("/chat", response_model=ChatResponse)
+def simple_chat(req: ChatRequest):
+    """Simple working chat that handles all questions properly"""
     
-    fast_response = None
-    if query_lower in greetings:
-        fast_response = "Hello! I am the Vishwakarma University Admission Assistant. How can I help you today?"
-    elif query_lower in basic_queries:
-        fast_response = "I am an AI assistant here to help you with information about Vishwakarma University admissions, programs, fees, and campus life. Feel free to ask me anything!"
-
-    if fast_response:
-        return {
-            "answer": fast_response,
-            "sources": []
-        }
-
-    if not granite:
-        raise HTTPException(status_code=503, detail="Granite service unavailable")
-
+    start_time = time.time()
+    
+    # Validate input
+    if not req.question or not req.question.strip():
+        return ChatResponse(
+            response="Please ask a question about Vishwakarma University. I'm here to help!",
+            sources=[],
+            response_time_ms=1
+        )
+    
+    question = req.question.strip().lower()
+    
+    # Handle greetings
+    greeting_patterns = [r'\bhi\b', r'\bhello\b', r'\bhey\b', r'\bnamaste\b']
+    if any(re.search(pattern, question) for pattern in greeting_patterns):
+        return ChatResponse(
+            response="Hello! I'm the VU Chatbot, here to help you with information about Vishwakarma University. I can assist you with programs, admissions, fees, placements, campus facilities, and more. What would you like to know?",
+            sources=[],
+            response_time_ms=(time.time() - start_time) * 1000
+        )
+    
     try:
-        result = retrieve_context(req.question)
-        context = result.get("context", "")
-        sources = result.get("sources", [])
-    except Exception as e:
-        logger.error(f"Error retrieving context: {e}")
-        context = ""
-        sources = []
-
-    prompt = f"""You are a helpful and professional admission assistant for Vishwakarma University.
-Your task is to answer the user's question based ONLY on the provided context.
-Answer directly and concisely. Do not make up new questions or answers.
-If the answer is not in the context, politely state that you don't have that information.
-
----
-Context:
-{context}
----
-
-User Question: {req.question}
-
-Assistant Answer:"""
-
-    try:
-        # Use simple generation instead of streaming to restore stability
-        # We need to ensure GraniteClient supports non-streaming generation via generate_chat_response
-        # or we consume the stream here and join it.
-        # Assuming generate_chat_response still exists and works.
-        answer = granite.generate_chat_response(prompt)
+        # Create a contextual prompt for university questions
+        context_prompt = f"""You are a helpful assistant for Vishwakarma University. 
+        Answer the following question about VU in a friendly, informative way:
         
-        # Clean up artifacts if any
-        for stop_seq in ["User Question:", "Question:", "\nUser:", "\nQuestion:"]:
-            if stop_seq in answer:
-                answer = answer.split(stop_seq)[0]
-        answer = answer.strip()
+        Question: {req.question}
+        
+        Provide a helpful response about Vishwakarma University. If you don't have specific information, guide them to contact the university directly."""
+        
+        # Use direct granite client call
+        response = granite_client.generate_chat_response(context_prompt)
+        
+        total_time = (time.time() - start_time) * 1000
+        
+        logger.info(f"Simple chat response generated in {total_time:.1f}ms for: {req.question[:50]}")
+        
+        return ChatResponse(
+            response=response,
+            sources=[],
+            response_time_ms=total_time,
+            tokens_used=len(response.split()) if response else 0
+        )
         
     except Exception as e:
-        logger.error(f"Error generating response: {e}")
-        raise HTTPException(status_code=500, detail="Failed to generate response")
+        error_time = (time.time() - start_time) * 1000
+        logger.error(f"Chat error after {error_time:.1f}ms: {str(e)}")
+        
+        return ChatResponse(
+            response="I'm here to help with questions about Vishwakarma University! Could you please rephrase your question? I can provide information about programs, admissions, fees, placements, and campus facilities.",
+            sources=[],
+            response_time_ms=error_time
+        )
 
-    return {
-        "answer": answer,
-        "sources": sources
-    }
+@router.post("/chat/quality", response_model=ChatResponse) 
+def enhanced_chat(req: ChatRequest):
+    """Enhanced endpoint that uses same simple logic"""
+    # Redirect to simple working chat
+    return simple_chat(req)

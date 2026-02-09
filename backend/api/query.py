@@ -11,14 +11,16 @@ class ChatRequest(BaseModel):
 
 
 class ChatResponse(BaseModel):
-    answer: str
+    response: str
+    response_time_ms: float = 0
 
 
 @router.post("/chat", response_model=ChatResponse)
 def chat(req: ChatRequest):
     """Traditional blocking endpoint for backward compatibility"""
     answer = answer_question(req.question)
-    return {"answer": answer}
+    return {"response": answer, "response_time_ms": 0}
+
 
 
 @router.post("/chat/stream")
