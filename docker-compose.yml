@@ -1,4 +1,4 @@
-version: '3.8'
+ version: '3.8'
 
 services:
   vu-chatbot:
@@ -11,7 +11,12 @@ services:
       - "8000:8000"
     environment:
       - ENVIRONMENT=production
-      - DATABASE_URL=sqlite:///./data/app.db
+      - AWS_S3_BUCKET=vu-chatbot
+      - AWS_REGION=us-east-1
+      - AWS_S3_PREFIX=vu-chatbot-db
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
       - CORS_ORIGINS=*
     volumes:
       - ./data:/app/data

@@ -2,9 +2,7 @@ import pandas as pd
 import json
 import logging
 from typing import List, Dict, Any, Optional
-from sqlalchemy.orm import Session
-from backend.database import get_db, engine
-from backend.models.placement import Company, JobOpening, Placement, PlacementStats
+from backend.database import mongo_db, get_next_sequence
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -14,7 +12,7 @@ class PlacementDataIngestion:
     """Handle Excel file ingestion for placement data - adapts to any format"""
     
     def __init__(self):
-        self.db = next(get_db())
+        self.db = mongo_db
         
         # Flexible column mappings - will detect automatically
         self.column_mappings = {
@@ -123,26 +121,27 @@ class PlacementDataIngestion:
                     continue
                 
                 # Check if company already exists
-                existing = self.db.query(Company).filter(Company.name == company_name).first()
+                existing = self.db.companies.find_one({"name": company_name})
                 if existing:
                     continue
                 
-                company = Company(
-                    name=company_name,
-                    industry=self._get_value(row, mapping, 'industry') or '',
-                    location=self._get_value(row, mapping, 'job_location') or '',
-                    website=self._get_value(row, mapping, 'website'),
-                    hr_contact=self._get_value(row, mapping, 'hr_contact'),
-                    hr_email=self._get_value(row, mapping, 'hr_email')
-                )
-                
-                self.db.add(company)
+                company = {
+                    "id": get_next_sequence("companies"),
+                    "name": company_name,
+                    "industry": self._get_value(row, mapping, 'industry') or '',
+                    "location": self._get_value(row, mapping, 'job_location') or '',
+                    "website": self._get_value(row, mapping, 'website'),
+                    "hr_contact": self._get_value(row, mapping, 'hr_contact'),
+                    "hr_email": self._get_value(row, mapping, 'hr_email'),
+                    "created_at": datetime.utcnow(),
+                }
+
+                self.db.companies.insert_one(company)
                 count += 1
                 
             except Exception as e:
                 logger.error(f"Error processing company row: {e}")
-        
-        self.db.commit()
+
         return count
     
     def _process_flexible_placements(self, df: pd.DataFrame, mapping: Dict[str, str]) -> int:
@@ -160,36 +159,39 @@ class PlacementDataIngestion:
                 # Get or create company
                 company = None
                 if company_name:
-                    company = self.db.query(Company).filter(Company.name == company_name).first()
+                    company = self.db.companies.find_one({"name": company_name})
                     if not company:
-                        company = Company(name=company_name)
-                        self.db.add(company)
-                        self.db.commit()
-                        self.db.refresh(company)
+                        company = {
+                            "id": get_next_sequence("companies"),
+                            "name": company_name,
+                            "created_at": datetime.utcnow(),
+                        }
+                        self.db.companies.insert_one(company)
                 
                 # Create placement record
-                placement = Placement(
-                    student_name=student_name or 'Unknown',
-                    student_email=self._get_value(row, mapping, 'email'),
-                    student_id=str(self._get_value(row, mapping, 'student_id') or ''),
-                    program=self._get_value(row, mapping, 'program') or '',
-                    graduation_year=self._safe_int(self._get_value(row, mapping, 'graduation_year')),
-                    cgpa=self._safe_float(self._get_value(row, mapping, 'cgpa')),
-                    company_id=company.id if company else None,
-                    job_title=self._get_value(row, mapping, 'job_title') or '',
-                    package=self._safe_float(self._get_value(row, mapping, 'package')),
-                    job_location=self._get_value(row, mapping, 'job_location') or '',
-                    selection_rounds=self._get_value(row, mapping, 'selection_process'),
-                    selection_date=self._safe_date(self._get_value(row, mapping, 'selection_date'))
-                )
-                
-                self.db.add(placement)
+                placement = {
+                    "id": get_next_sequence("placements"),
+                    "student_name": student_name or 'Unknown',
+                    "student_email": self._get_value(row, mapping, 'email'),
+                    "student_id": str(self._get_value(row, mapping, 'student_id') or ''),
+                    "program": self._get_value(row, mapping, 'program') or '',
+                    "graduation_year": self._safe_int(self._get_value(row, mapping, 'graduation_year')),
+                    "cgpa": self._safe_float(self._get_value(row, mapping, 'cgpa')),
+                    "company_id": company.get("id") if company else None,
+                    "job_title": self._get_value(row, mapping, 'job_title') or '',
+                    "package": self._safe_float(self._get_value(row, mapping, 'package')),
+                    "job_location": self._get_value(row, mapping, 'job_location') or '',
+                    "selection_rounds": self._get_value(row, mapping, 'selection_process'),
+                    "selection_date": self._safe_date(self._get_value(row, mapping, 'selection_date')),
+                    "created_at": datetime.utcnow(),
+                }
+
+                self.db.placements.insert_one(placement)
                 count += 1
                 
             except Exception as e:
                 logger.error(f"Error processing placement row: {e}")
-        
-        self.db.commit()
+
         return count
     
     def _get_value(self, row, mapping: Dict[str, str], field: str):

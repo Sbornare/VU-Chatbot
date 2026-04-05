@@ -4,7 +4,10 @@ from pydantic import Field
 
 class Settings(BaseSettings):
     # Database
-    DATABASE_URL: str
+    DATABASE_URL: str = "sqlite:///./admissions.db"
+    AWS_S3_BUCKET: str = Field(..., env="AWS_S3_BUCKET")
+    AWS_REGION: str = Field(default="us-east-1", env="AWS_REGION")
+    AWS_S3_PREFIX: str = Field(default="vu-chatbot-db", env="AWS_S3_PREFIX")
     JWT_SECRET: str
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30

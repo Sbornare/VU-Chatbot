@@ -1,53 +1,50 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import func, desc, text
-from typing import List, Optional
+from typing import Optional
 import tempfile
 import os
-from functools import lru_cache
-import time
+import re
 from backend.database import get_db
-from backend.models.placement import Company, JobOpening, Placement, PlacementStats
 from backend.services.placement_ingestion import ingest_placement_data
 from backend.auth.dependencies import get_current_user
-from backend.auth.models import User
 
 router = APIRouter()
+
+
+def _clean_docs(items: list[dict]) -> list[dict]:
+    cleaned = []
+    for item in items:
+        data = dict(item)
+        data.pop("_id", None)
+        cleaned.append(data)
+    return cleaned
 
 
 @router.post("/upload-placement-data")
 async def upload_placement_data(
     file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    current_user=Depends(get_current_user),
 ):
-    """Upload Excel file with placement data (Admin only)"""
-    if current_user.role != "admin":
+    """Upload Excel file with placement data (Admin only)."""
+    if current_user.get("role") != "admin":
         raise HTTPException(403, "Admin access required")
-    
-    if not file.filename.endswith(('.xlsx', '.xls')):
+
+    if not file.filename.endswith((".xlsx", ".xls")):
         raise HTTPException(400, "Please upload an Excel file (.xlsx or .xls)")
-    
-    # Save uploaded file temporarily
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as temp_file:
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".xlsx") as temp_file:
         content = await file.read()
         temp_file.write(content)
         temp_file_path = temp_file.name
-    
+
     try:
-        # Process the Excel file
         results = ingest_placement_data(temp_file_path)
-        
         return {
             "message": "Placement data uploaded successfully",
-            "results": results
+            "results": results,
         }
-    
     except Exception as e:
         raise HTTPException(500, f"Error processing file: {str(e)}")
-    
     finally:
-        # Clean up temporary file
         if os.path.exists(temp_file_path):
             os.unlink(temp_file_path)
 
@@ -56,21 +53,20 @@ async def upload_placement_data(
 def get_companies(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
-    search: str = Query(None),
-    db: Session = Depends(get_db)
+    search: Optional[str] = Query(None),
+    db=Depends(get_db),
 ):
-    """Get list of companies"""
-    query = db.query(Company)
-    
+    """Get list of companies."""
+    filter_query = {}
     if search:
-        query = query.filter(Company.name.ilike(f"%{search}%"))
-    
-    total = query.count()
-    companies = query.offset(skip).limit(limit).all()
-    
+        filter_query["name"] = {"$regex": re.escape(search), "$options": "i"}
+
+    total = db.companies.count_documents(filter_query)
+    companies = list(db.companies.find(filter_query, {"_id": 0}).skip(skip).limit(limit))
+
     return {
         "total": total,
-        "companies": companies
+        "companies": companies,
     }
 
 
@@ -78,123 +74,148 @@ def get_companies(
 def get_placements(
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
-    program: str = Query(None),
-    company_name: str = Query(None),
-    min_package: float = Query(None),
-    graduation_year: int = Query(None),
-    db: Session = Depends(get_db)
+    program: Optional[str] = Query(None),
+    company_name: Optional[str] = Query(None),
+    min_package: Optional[float] = Query(None),
+    graduation_year: Optional[int] = Query(None),
+    db=Depends(get_db),
 ):
-    """Get placement records with filters"""
-    query = db.query(Placement)
-    
+    """Get placement records with filters."""
+    filter_query = {}
+
     if program:
-        query = query.filter(Placement.program.ilike(f"%{program}%"))
-    
+        filter_query["program"] = {"$regex": re.escape(program), "$options": "i"}
+
+    if min_package is not None:
+        filter_query["package"] = {"$gte": min_package}
+
+    if graduation_year is not None:
+        filter_query["graduation_year"] = graduation_year
+
     if company_name:
-        query = query.join(Company).filter(Company.name.ilike(f"%{company_name}%"))
-    
-    if min_package:
-        query = query.filter(Placement.package >= min_package)
-    
-    if graduation_year:
-        query = query.filter(Placement.graduation_year == graduation_year)
-    
-    total = query.count()
-    placements = query.offset(skip).limit(limit).all()
-    
+        company_ids = [
+            company["id"]
+            for company in db.companies.find(
+                {"name": {"$regex": re.escape(company_name), "$options": "i"}},
+                {"_id": 0, "id": 1},
+            )
+        ]
+        if not company_ids:
+            return {"total": 0, "placements": []}
+        filter_query["company_id"] = {"$in": company_ids}
+
+    total = db.placements.count_documents(filter_query)
+    placements = list(db.placements.find(filter_query, {"_id": 0}).skip(skip).limit(limit))
+
+    company_map = {
+        company["id"]: company
+        for company in db.companies.find(
+            {"id": {"$in": [p.get("company_id") for p in placements if p.get("company_id") is not None]}},
+            {"_id": 0},
+        )
+    }
+    for placement in placements:
+        cid = placement.get("company_id")
+        if cid in company_map:
+            placement["company"] = company_map[cid]
+
     return {
         "total": total,
-        "placements": placements
+        "placements": placements,
     }
 
 
 @router.get("/placement-stats")
 def get_placement_stats(
-    program: str = Query(None),
-    graduation_year: int = Query(None),
-    db: Session = Depends(get_db)
+    program: Optional[str] = Query(None),
+    graduation_year: Optional[int] = Query(None),
+    db=Depends(get_db),
 ):
-    """Get placement statistics"""
-    query = db.query(Placement)
-    
+    """Get placement statistics."""
+    filter_query = {}
     if program:
-        query = query.filter(Placement.program.ilike(f"%{program}%"))
-    
-    if graduation_year:
-        query = query.filter(Placement.graduation_year == graduation_year)
-    
-    placements = query.all()
-    
+        filter_query["program"] = {"$regex": re.escape(program), "$options": "i"}
+    if graduation_year is not None:
+        filter_query["graduation_year"] = graduation_year
+
+    placements = list(db.placements.find(filter_query, {"_id": 0}))
+
     if not placements:
         return {
             "message": "No placement data found for the specified filters",
-            "stats": {}
+            "stats": {},
         }
-    
-    # Calculate statistics
-    total_placements = len(placements)
-    packages = [p.package for p in placements if p.package]
-    
-    # Company-wise statistics
+
+    company_map = {
+        c["id"]: c
+        for c in db.companies.find(
+            {"id": {"$in": [p.get("company_id") for p in placements if p.get("company_id") is not None]}},
+            {"_id": 0, "id": 1, "name": 1},
+        )
+    }
+
+    packages = [p.get("package") for p in placements if p.get("package") is not None]
     company_stats = {}
+
     for placement in placements:
-        if placement.company:
-            company_name = placement.company.name
-            if company_name not in company_stats:
-                company_stats[company_name] = {
-                    'count': 0,
-                    'packages': []
-                }
-            company_stats[company_name]['count'] += 1
-            if placement.package:
-                company_stats[company_name]['packages'].append(placement.package)
-    
-    # Top recruiters
+        company = company_map.get(placement.get("company_id"))
+        if not company:
+            continue
+
+        company_name = company.get("name", "Unknown")
+        if company_name not in company_stats:
+            company_stats[company_name] = {"count": 0, "packages": []}
+
+        company_stats[company_name]["count"] += 1
+        if placement.get("package") is not None:
+            company_stats[company_name]["packages"].append(placement["package"])
+
     top_recruiters = sorted(
         company_stats.items(),
-        key=lambda x: x[1]['count'],
-        reverse=True
+        key=lambda x: x[1]["count"],
+        reverse=True,
     )[:10]
-    
+
     return {
-        "total_placements": total_placements,
+        "total_placements": len(placements),
         "average_package": sum(packages) / len(packages) if packages else 0,
         "highest_package": max(packages) if packages else 0,
         "lowest_package": min(packages) if packages else 0,
         "top_recruiters": [
             {
                 "company": name,
-                "placements": stats['count'],
-                "avg_package": sum(stats['packages']) / len(stats['packages']) if stats['packages'] else 0
+                "placements": stats["count"],
+                "avg_package": (sum(stats["packages"]) / len(stats["packages"])) if stats["packages"] else 0,
             }
             for name, stats in top_recruiters
-        ]
+        ],
     }
 
 
 @router.get("/placement-trends")
-def get_placement_trends(db: Session = Depends(get_db)):
-    """Get placement trends over years"""
-    trends = db.query(
-        Placement.graduation_year,
-        func.count(Placement.id).label('total_placements'),
-        func.avg(Placement.package).label('avg_package'),
-        func.max(Placement.package).label('max_package')
-    ).filter(
-        Placement.graduation_year.isnot(None)
-    ).group_by(
-        Placement.graduation_year
-    ).order_by(
-        Placement.graduation_year
-    ).all()
-    
+def get_placement_trends(db=Depends(get_db)):
+    """Get placement trends over years."""
+    pipeline = [
+        {"$match": {"graduation_year": {"$ne": None}}},
+        {
+            "$group": {
+                "_id": "$graduation_year",
+                "total_placements": {"$sum": 1},
+                "avg_package": {"$avg": "$package"},
+                "max_package": {"$max": "$package"},
+            }
+        },
+        {"$sort": {"_id": 1}},
+    ]
+
+    trends = list(db.placements.aggregate(pipeline))
     return {
         "trends": [
             {
-                "year": trend.graduation_year,
-                "total_placements": trend.total_placements,
-                "average_package": float(trend.avg_package) if trend.avg_package else 0,
-                "highest_package": float(trend.max_package) if trend.max_package else 0
+                "year": trend.get("_id"),
+                "total_placements": trend.get("total_placements", 0),
+                "average_package": float(trend.get("avg_package") or 0),
+                "highest_package": float(trend.get("max_package") or 0),
             }
             for trend in trends
         ]
@@ -204,37 +225,47 @@ def get_placement_trends(db: Session = Depends(get_db)):
 @router.get("/search-placements")
 def search_placements(
     query: str = Query(..., min_length=2),
-    db: Session = Depends(get_db)
+    db=Depends(get_db),
 ):
-    """Search placements by student name, company, or job title"""
-    placements = db.query(Placement).join(Company).filter(
-        (Placement.student_name.ilike(f"%{query}%")) |
-        (Company.name.ilike(f"%{query}%")) |
-        (Placement.job_title.ilike(f"%{query}%")) |
-        (Placement.program.ilike(f"%{query}%"))
-    ).limit(50).all()
-    
+    """Search placements by student name, company, or job title."""
+    company_ids = [
+        company["id"]
+        for company in db.companies.find(
+            {"name": {"$regex": re.escape(query), "$options": "i"}},
+            {"_id": 0, "id": 1},
+        )
+    ]
+
+    search_filter = {
+        "$or": [
+            {"student_name": {"$regex": re.escape(query), "$options": "i"}},
+            {"job_title": {"$regex": re.escape(query), "$options": "i"}},
+            {"program": {"$regex": re.escape(query), "$options": "i"}},
+            {"company_id": {"$in": company_ids}} if company_ids else {"company_id": -1},
+        ]
+    }
+
+    placements = list(db.placements.find(search_filter, {"_id": 0}).limit(50))
     return {
         "results": placements,
-        "count": len(placements)
+        "count": len(placements),
     }
 
 
 @router.get("/companies/{company_id}/placements")
 def get_company_placements(
     company_id: int,
-    db: Session = Depends(get_db)
+    db=Depends(get_db),
 ):
-    """Get all placements for a specific company"""
-    company = db.query(Company).filter(Company.id == company_id).first()
-    
+    """Get all placements for a specific company."""
+    company = db.companies.find_one({"id": company_id}, {"_id": 0})
     if not company:
         raise HTTPException(404, "Company not found")
-    
-    placements = db.query(Placement).filter(Placement.company_id == company_id).all()
-    
+
+    placements = list(db.placements.find({"company_id": company_id}, {"_id": 0}))
+
     return {
         "company": company,
         "placements": placements,
-        "total_placements": len(placements)
+        "total_placements": len(placements),
     }

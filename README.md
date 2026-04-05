@@ -78,6 +78,11 @@ uvicorn main:app --reload
 #### .env Example
 ```
 DATABASE_URL=sqlite:///./test.db
+AWS_S3_BUCKET=your-s3-bucket
+AWS_REGION=us-east-1
+AWS_S3_PREFIX=vu-chatbot-db
+AWS_ACCESS_KEY_ID=your-access-key
+AWS_SECRET_ACCESS_KEY=your-secret-key
 JWT_SECRET=supersecretkey
 JWT_ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30

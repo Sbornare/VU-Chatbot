@@ -3,9 +3,7 @@ Background task to send WhatsApp deadline alerts
 Run periodically using APScheduler
 """
 from datetime import datetime, timedelta
-from sqlalchemy.orm import Session
-from backend.database import SessionLocal
-from backend.auth.models import User
+from backend.database import mongo_db
 from backend.services.whatsapp_service import whatsapp_service
 from backend.rag.retriever import retrieve_context
 import logging
@@ -46,14 +44,17 @@ def check_and_send_deadline_alerts():
     Check for upcoming deadlines and send WhatsApp alerts to ALL registered users
     Call this function periodically (e.g., every 6 hours)
     """
-    db = SessionLocal()
-    
     try:
         # Get all users with WhatsApp notifications enabled
-        users = db.query(User).filter(
-            User.phone_number.isnot(None),
-            User.whatsapp_notifications_enabled == True
-        ).all()
+        users = list(
+            mongo_db.users.find(
+                {
+                    "phone_number": {"$nin": [None, ""]},
+                    "whatsapp_notifications_enabled": True,
+                },
+                {"_id": 0},
+            )
+        )
         
         if not users:
             logger.info("No users registered with WhatsApp notifications")
@@ -78,7 +79,11 @@ def check_and_send_deadline_alerts():
                 # Send to all users
                 for user in users:
                     # Check if this program matches user's interests
-                    programs = [p.strip().lower() for p in (user.interested_programs or "").split(",") if p.strip()]
+                    programs = [
+                        p.strip().lower()
+                        for p in (user.get("interested_programs") or "").split(",")
+                        if p.strip()
+                    ]
                     
                     # Send to all users if no specific programs or program matches
                     should_notify = not programs or any(
@@ -88,7 +93,7 @@ def check_and_send_deadline_alerts():
                     if should_notify:
                         try:
                             success = whatsapp_service.send_deadline_alert(
-                                user.phone_number,
+                                user.get("phone_number"),
                                 deadline["program"],
                                 days_remaining,
                                 deadline["raw_date_str"]
@@ -96,19 +101,17 @@ def check_and_send_deadline_alerts():
                             
                             if success:
                                 alerts_sent += 1
-                                logger.info(f"Alert sent to {user.phone_number} for {deadline['program']}")
+                                logger.info(f"Alert sent to {user.get('phone_number')} for {deadline['program']}")
                             else:
                                 alerts_failed += 1
                         except Exception as e:
-                            logger.error(f"Failed to send alert to {user.phone_number}: {e}")
+                            logger.error(f"Failed to send alert to {user.get('phone_number')}: {e}")
                             alerts_failed += 1
         
         logger.info(f"Deadline alerts: {alerts_sent} sent, {alerts_failed} failed")
         
     except Exception as e:
         logger.error(f"Error checking deadlines: {e}")
-    finally:
-        db.close()
 
 
 def start_deadline_checker(scheduler):

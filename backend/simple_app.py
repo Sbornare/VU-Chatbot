@@ -210,20 +210,13 @@ For exact current fees, contact:
         return """📍 **Vishwakarma University Location:**
 
 **Full Address:**
-Survey No. 2, 3, 4, Kondhwa Budruk  
-Pune, Maharashtra 411048, India
+Survey No 2 3, 4, Kondhwa Main Rd, 
+Laxmi Nagar, Betal Nagar, 
+Kondhwa, Pune, Maharashtra 411048
 
-**Nearby Landmarks:**
-• Near Seasons Mall, Magarpatta
-• Close to Amanora Mall
-• 15 minutes from Pune International Airport
-• Well connected to Pune Railway Station
 
-**How to Reach:**
-🚌 **By Bus:** PMPML buses available from major areas
-🚗 **By Car:** Easy access via Ring Road and Mumbai-Pune Highway  
-🚇 **By Metro:** Upcoming metro connectivity
-✈️ **From Airport:** 15-20 minutes by taxi/cab
+
+
 
 **Campus:** Spread over 100+ acres with modern infrastructure"""
     

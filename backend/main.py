@@ -7,7 +7,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from backend.config import settings
-from backend.database import Base, engine
+from backend.database import init_database
 
 
 from backend.auth.routes import router as auth_router
@@ -32,8 +32,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ Create DB tables
-Base.metadata.create_all(bind=engine)
+# ✅ Initialize S3-backed collections
+init_database()
 
 # ✅ Routers
 app.include_router(auth_router, prefix="/auth", tags=["Auth"])

@@ -1,0 +1,37 @@
+version: "3.8"
+
+services:
+  vu-chatbot:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    container_name: vu-chatbot-app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env.ec2
+    command: ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    volumes:
+      - ../../data:/app/data
+      - ../../logs:/app/logs
+
+  nginx:
+    image: nginx:alpine
+    container_name: vu-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ../../nginx.conf:/etc/nginx/nginx.conf:ro
+      - ../../ssl:/etc/ssl:ro
+    depends_on:
+      vu-chatbot:
+        condition: service_healthy
