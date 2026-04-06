@@ -8,7 +8,6 @@ from backend.auth.auth_utils import (
     create_access_token
 )
 from backend.auth.dependencies import get_current_user
-from backend.services.whatsapp_service import whatsapp_service
 import logging
 
 logger = logging.getLogger(__name__)
@@ -41,18 +40,6 @@ def register(user: UserCreate, db=Depends(get_db)):
     }
 
     users.insert_one(new_user)
-    
-    # Send WhatsApp welcome message only if enabled
-    try:
-        if user.phone_number and user.whatsapp_notifications_enabled:
-            success = whatsapp_service.send_welcome_message(
-                user.phone_number,
-                user.username
-            )
-            if success:
-                logger.info(f"WhatsApp welcome message sent to {user.phone_number}")
-    except Exception as e:
-        logger.error(f"Failed to send welcome message: {e}")
     
     new_user.pop("hashed_password", None)
     return new_user

@@ -4,7 +4,6 @@ Run periodically using APScheduler
 """
 from datetime import datetime, timedelta
 from backend.database import mongo_db
-from backend.services.whatsapp_service import whatsapp_service
 from backend.rag.retriever import retrieve_context
 import logging
 
@@ -92,18 +91,20 @@ def check_and_send_deadline_alerts():
                     
                     if should_notify:
                         try:
-                            success = whatsapp_service.send_deadline_alert(
-                                user.get("phone_number"),
-                                deadline["program"],
-                                days_remaining,
-                                deadline["raw_date_str"]
-                            )
-                            
-                            if success:
-                                alerts_sent += 1
-                                logger.info(f"Alert sent to {user.get('phone_number')} for {deadline['program']}")
-                            else:
-                                alerts_failed += 1
+                            # WhatsApp service disabled
+                            # success = whatsapp_service.send_deadline_alert(
+                            #     user.get("phone_number"),
+                            #     deadline["program"],
+                            #     days_remaining,
+                            #     deadline["raw_date_str"]
+                            # )
+                            # 
+                            # if success:
+                            #     alerts_sent += 1
+                            #     logger.info(f"Alert sent to {user.get('phone_number')} for {deadline['program']}")
+                            # else:
+                            #     alerts_failed += 1
+                            pass
                         except Exception as e:
                             logger.error(f"Failed to send alert to {user.get('phone_number')}: {e}")
                             alerts_failed += 1
