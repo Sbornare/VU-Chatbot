@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     AWS_S3_BUCKET: str = Field(..., env="AWS_S3_BUCKET")
     AWS_REGION: str = Field(default="us-east-1", env="AWS_REGION")
     AWS_S3_PREFIX: str = Field(default="vu-chatbot-db", env="AWS_S3_PREFIX")
-    JWT_SECRET: str
+    JWT_SECRET: str = Field(default="dev-secret-key-change-in-production", env="JWT_SECRET")
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     
@@ -16,13 +16,13 @@ class Settings(BaseSettings):
     APP_NAME: str = "College Admission Agent"
 
     # IBM Cloud
-    IBM_CLOUD_API_KEY: str = Field(..., env="IBM_CLOUD_API_KEY")
-    IBM_PROJECT_ID: str = Field(..., env="IBM_PROJECT_ID")
-    IBM_WATSONX_URL: str = Field(..., env="IBM_WATSONX_URL")
+    IBM_CLOUD_API_KEY: str = Field(default="", env="IBM_CLOUD_API_KEY")
+    IBM_PROJECT_ID: str = Field(default="", env="IBM_PROJECT_ID")
+    IBM_WATSONX_URL: str = Field(default="", env="IBM_WATSONX_URL")
 
     # Granite models
-    GRANITE_EMBEDDING_MODEL: str
-    GRANITE_CHAT_MODEL: str
+    GRANITE_EMBEDDING_MODEL: str = Field(default="granite-embedding-model", env="GRANITE_EMBEDDING_MODEL")
+    GRANITE_CHAT_MODEL: str = Field(default="granite-chat-model", env="GRANITE_CHAT_MODEL")
 
     # Twilio WhatsApp
     TWILIO_ACCOUNT_SID: str = Field(default="", env="TWILIO_ACCOUNT_SID")
